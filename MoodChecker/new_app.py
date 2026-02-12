@@ -4,9 +4,18 @@ from colorama import init, Fore, Style
 
 init(autoreset=True)
 
-df = pd.read_csv("imdb_top_1000.csv")
+df = pd.read_csv("imdb_top_100.csv")
 
-genres = sorted(set(g.strip() for x in df["Genre"].dropna() for g in x.split(",")))
+df["Overview"] = df["Overview"].fillna("")
+df["Sentiment"] = df["Overview"].apply(
+    lambda x: TextBlob(x).sentiment.polarity
+)
+
+genres = sorted(set(
+    g.strip()
+    for x in df["Genre"].dropna()
+    for g in x.split(",")
+))
 
 moods = {
     "1": ("Happy", 0.2),
@@ -17,30 +26,35 @@ moods = {
 }
 
 def recommend(genre, mood_threshold, limit=5):
+
     data = df[df["Genre"].str.contains(genre, case=False, na=False)]
-    result = []
 
-    for _, row in data.sample(frac=1).iterrows():
-        if pd.isna(row["Overview"]):
-            continue
+    if data.empty:
+        return []
 
-        polarity = TextBlob(row["Overview"]).sentiment.polarity
+    if mood_threshold >= 0:
+        filtered = data[data["Sentiment"] >= mood_threshold]
+    else:
+        filtered = data[data["Sentiment"] <= mood_threshold]
 
-        if (mood_threshold >= 0 and polarity >= mood_threshold) or \
-           (mood_threshold < 0 and polarity <= mood_threshold):
+    if filtered.empty:
+        return []
 
-            result.append(
-                (row["Series_Title"], row["Released_Year"], round(polarity, 2))
-            )
+    filtered = filtered.sort_values(
+        by="IMDB_Rating", ascending=False
+    )
 
-        if len(result) == limit:
-            break
+    top = filtered.head(limit)
 
-    return result
+    return [
+        (row["Series_Title"], row["Released_Year"], row["IMDB_Rating"], round(row["Sentiment"], 2))
+        for _, row in top.iterrows()
+    ]
 
 
 def main():
-    print(Fore.BLUE + Style.BRIGHT + "\n Movie Recommendation System\n")
+
+    print(Fore.BLUE + Style.BRIGHT + "\n Movie Recommendation System (Top 100 Edition)\n")
 
     name = input(Fore.CYAN + "Enter your name: " + Fore.WHITE).strip()
 
@@ -59,7 +73,7 @@ def main():
             genre = g.title()
             break
 
-        print(Fore.RED + "Invalid genre selection. Please try again.")
+        print(Fore.RED + "Invalid genre selection. Try again.")
 
     print(Fore.CYAN + f"\nSelected Genre: {genre}")
 
@@ -69,26 +83,30 @@ def main():
 
     while True:
         m = input(Fore.MAGENTA + "Enter mood number: " + Fore.WHITE).strip()
+
         if m in moods:
             mood_name, mood_value = moods[m]
             break
 
-        print(Fore.RED + "Invalid mood selection. Please try again.")
+        print(Fore.RED + "Invalid mood selection. Try again.")
 
     movies = recommend(genre, mood_value)
 
-    print(Fore.YELLOW + Style.BRIGHT + f"\nRecommendations for {name} ({mood_name} mood):\n")
+    print(Fore.YELLOW + Style.BRIGHT +
+          f"\nRecommendations for {name} ({mood_name} mood):\n")
 
     if not movies:
-        print(Fore.RED + "No matching movies found based on your preferences.")
+        print(Fore.RED + "No matching movies found.")
         return
 
-    for i, (title, year, score) in enumerate(movies, 1):
-        color = Fore.GREEN if score >= 0 else Fore.RED
+    for i, (title, year, rating, sentiment) in enumerate(movies, 1):
+        sentiment_color = Fore.GREEN if sentiment >= 0 else Fore.RED
+
         print(
-            f"{Fore.WHITE}{i}. {color}{title} "
+            f"{Fore.WHITE}{i}. {Fore.GREEN}{title} "
             f"{Fore.CYAN}({year}) "
-            f"{Fore.WHITE}- Sentiment: {score:.2f}"
+            f"{Fore.WHITE}| IMDb: {rating} "
+            f"| Sentiment: {sentiment_color}{sentiment:.2f}"
         )
 
 
